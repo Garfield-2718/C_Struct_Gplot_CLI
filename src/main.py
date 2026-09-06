@@ -70,8 +70,13 @@ def load_config(args):
         if run_mode == 'svg' and args.extract_name is not None:
                 set_assignment_config('svg_mode', {'extract_name': args.extract_name})
 
-        if args.db_path is not None:
-                set_assignment_config('database', {'db_path': args.db_path})
+        if args.db_path is not None or args.db_name is not None:
+                database = {}
+                if args.db_path is not None:
+                        database['db_path'] = args.db_path
+                if args.db_name is not None:
+                        database['db_name'] = args.db_name
+                set_assignment_config('database', database)
 
         debug_log = {}
         if args.log_enabled is not None:
@@ -126,6 +131,8 @@ def parse_args():
                                 help=_('待提取的根结构体名称 (svg_mode.extract_name),仅在 svg 时生效'))
         parser.add_argument('--db-path',
                                 help=_('数据库输出路径 (database.db_path)'))
+        parser.add_argument('--db-name',
+                                help=_('数据库文件名 (database.db_name)'))
         parser.add_argument('--log-enabled', action=argparse.BooleanOptionalAction, default=None,
                                 help=_('是否启用调试日志 (debug_log.enabled)'))
         parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
