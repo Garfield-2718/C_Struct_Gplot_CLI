@@ -1,5 +1,4 @@
 import os
-import hashlib
 import shutil
 
 from debug_log import *
@@ -178,7 +177,7 @@ class filePreprocessor:
 
                 return processed
 
-        def preprocess(self, filename):
+        def preprocess(self, filename, root=None):
                 try:
                         f = open(filename, 'r', encoding='utf-8', errors='replace')
                 except IOError as e:
@@ -187,14 +186,14 @@ class filePreprocessor:
                 processed = self._preprocess_content(f)
                 f.close()
 
-                # 生成临时文件路径,文件名后追加源路径hash后6位避免同名覆盖
-                basename = os.path.basename(filename)
-                path_hash = hashlib.md5(filename.encode('utf-8')).hexdigest()[-6:]
-                name, ext = os.path.splitext(basename)
-                temp_filename = f"{name}_{path_hash}{ext}.tmp"
+                if root is not None:
+                        rel_path = os.path.relpath(os.path.abspath(filename), os.path.abspath(root))
+                else:
+                        rel_path = os.path.basename(filename)
+                preprocessed_path = os.path.join(self.temp_file_path, rel_path) + '.tmp'
 
-                # 覆盖self.preprocessed_path确保每一次写入的文件不会重复
-                preprocessed_path = os.path.join(self.temp_file_path, temp_filename)
+                # 按镜像结构逐级创建父目录后写入,同名文件因目录层级不同而不会互相覆盖
+                os.makedirs(os.path.dirname(preprocessed_path), exist_ok=True)
                 out_file = open(preprocessed_path, 'w', encoding='utf-8')
                 out_file.write(processed)
                 out_file.close()
@@ -208,6 +207,9 @@ class fileExtract:
 
         # 提取单个文件中的结构体定义写数据库
         def _analysis_file(self, filepath, db_instance):
+                # 删除临时目录前缀与 .tmp 后缀,还原为输入项目内的原始相对路径写入数据库
+                path_without_tmp = filepath[:-4] if filepath.endswith('.tmp') else filepath
+                source_file = os.path.relpath(path_without_tmp, g_temp_file_path)
                 for structure_type in g_structure_types:
                         result = None
                         result = extract_structure(filepath, structure_type)
@@ -215,15 +217,16 @@ class fileExtract:
                                 log_warning(_("未找到 {} 定义").format(structure_type))
                         else:
                                 for record in result:
-                                        record['source_file'] = filepath
+                                        record['source_file'] = source_file
                                         db_instance.structures_insert(record)
 
         # 扫描指定文件路径,如果是目录,递归处理所有文件
-        def _scan_file_content(self, filepath, operation_type, db_instance=None):
+        # scan_root 为预处理镜像的根目录,用于计算项目内相对路径
+        def _scan_file_content(self, filepath, operation_type, db_instance=None, scan_root=None):
                 if os.path.isdir(filepath):
                         for entry in os.listdir(filepath):
                                 temp_filepath = os.path.join(filepath, entry)
-                                self._scan_file_content(temp_filepath, operation_type, db_instance)
+                                self._scan_file_content(temp_filepath, operation_type, db_instance, scan_root)
                         return
 
                 # 根据处理类型检查文件扩展名
@@ -236,7 +239,7 @@ class fileExtract:
                         return
 
                 if operation_type == "preprocess":
-                        self.preprocessor.preprocess(filepath)
+                        self.preprocessor.preprocess(filepath, scan_root)
                 elif operation_type == "extract":
                         self._analysis_file(filepath, db_instance)
                 return
@@ -299,7 +302,8 @@ class fileExtract:
                         raise FileNotFoundError(_("路径不存在: {}").format(filepath))
 
                 # 类型判断: 压缩包 → 先解压
-                if os.path.isfile(filepath) and self._is_archive(filepath):
+                is_archive = os.path.isfile(filepath) and self._is_archive(filepath)
+                if is_archive:
                         archive_name = os.path.basename(filepath)
                         base_name = self._strip_archive_extension(archive_name)
                         extract_dir = os.path.join(g_temp_file_path, base_name)
@@ -307,8 +311,11 @@ class fileExtract:
                         self._extract_archive(filepath, extract_dir)
                         filepath = extract_dir
 
-                # 文件夹或单个文件: 调用 scan_file_content 预处理
-                self._scan_file_content(filepath, "preprocess")
+                if is_archive:
+                        scan_root = filepath
+                else:
+                        scan_root = os.path.dirname(os.path.abspath(filepath))
+                self._scan_file_content(filepath, "preprocess", scan_root=scan_root)
 
                 # 提取: 扫描 temp_file_path 下预处理后的 .tmp 文件
                 self._scan_file_content(g_temp_file_path, "extract", db_instance)
