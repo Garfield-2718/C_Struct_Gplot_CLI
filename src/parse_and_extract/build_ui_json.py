@@ -251,14 +251,6 @@ class structureParser:
                         member_info.member_content = content
                         return member_format.enum_list, member_info
 
-                # member_format._is_function_pointer
-                ret, data_type_first = self._is_function_pointer(content)
-                if ret is True:
-                        member_info.data_type_first = data_type_first
-                        member_info.member_content = \
-                                self._split_function_pointer_declarations(content, data_type_first)
-                        return member_format.function_pointer, member_info
-
                 # member_format.nested_composite_types
                 ret, data_type_first, data_name_list, nested_content = \
                         self._is_nested_composite_types(content)
@@ -273,6 +265,14 @@ class structureParser:
                         member_info.member_content = member_content
                         member_info.nested_content = nested_content
                         return member_format.nested_composite_types, member_info
+
+                # member_format._is_function_pointer
+                ret, data_type_first = self._is_function_pointer(content)
+                if ret is True:
+                        member_info.data_type_first = data_type_first
+                        member_info.member_content = \
+                                self._split_function_pointer_declarations(content, data_type_first)
+                        return member_format.function_pointer, member_info
 
                 # member_format.primitive
                 ret, data_type_first = self._is_primitive_type(content)
